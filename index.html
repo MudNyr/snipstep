@@ -238,12 +238,36 @@ kbd{background:var(--soft);border-radius:4px;padding:1px 5px;font-family:inherit
         <button class="btn" id="bPaste">Paste timestamps</button>
       </div>
       <div class="drawer hidden" id="detectBox">
+       <div id="ytFind" class="hidden">
+        <p class="q"><b>Find the steps from the video's chapter list</b></p>
+        <p class="note" style="margin-top:0">Snipstep reads the chapter times that the creator wrote in the video's description, or in a top comment. For this, it needs a free YouTube key. You only add it once.</p>
+        <div class="row" id="keyRow"><label class="sr" for="ytKey">YouTube API key</label><input id="ytKey" type="password" placeholder="Paste your YouTube key" autocomplete="off" style="flex:1;min-width:0;border:2px solid var(--soft);border-radius:8px;padding:7px 10px"><button class="btn small" id="bSaveKey">Save key</button></div>
+        <p class="note hidden" id="keySaved">Key saved on this device. <button class="link" id="bChangeKey">Change key</button></p>
+        <details class="note" id="keyHelp"><summary>How to get a free key (about 5 minutes)</summary>
+          <ol style="padding-left:18px;margin:6px 0;line-height:1.5">
+            <li>Go to console.cloud.google.com and sign in with any Google account.</li>
+            <li>Create a project (any name, for example "Snipstep").</li>
+            <li>Open "APIs &amp; Services", then "Library". Search for "YouTube Data API v3" and click Enable.</li>
+            <li>Open "Credentials", click "Create credentials", then "API key". Copy the key and paste it above.</li>
+            <li>Recommended: click the key and, under "Website restrictions", add your Snipstep website address.</li>
+          </ol>It's free. Finding steps for one video uses a tiny part of the free daily limit.</details>
+        <div class="row"><button class="btn tape" id="bFindYT">Find steps</button><span class="status" id="ytStatus"></span></div>
+       </div>
+       <div id="fileFind">
         <div class="opt"><label class="q" for="sens">How many steps?</label>
           <div class="sub"><span>Fewer</span><input id="sens" type="range" min="1" max="10" value="5"><span>More</span></div></div>
         <div class="sub"><label for="minLen">Shortest step</label><select id="minLen"><option value="5">5 seconds</option><option value="10" selected>10 seconds</option><option value="20">20 seconds</option><option value="40">40 seconds</option></select></div>
         <div class="row"><button class="btn tape" id="bScan">Find steps</button><button class="btn hidden" id="bScanStop">Stop</button><span class="status" id="scanStatus"></span></div>
         <div class="bar"><i id="scanBar"></i></div>
         <p class="note">Snipstep looks for scene changes in the video. Rename the steps afterwards, and delete any extras.</p>
+       </div>
+       <div class="evensplit">
+        <p class="q" style="margin:12px 0 6px"><b>No chapters? Split it evenly</b></p>
+        <div class="row" style="margin-top:0"><label class="sr" for="evenBy">Split evenly</label>
+          <select id="evenBy" style="border:2px solid var(--soft);border-radius:8px;padding:6px"><option value="t30">a new step every 30 seconds</option><option value="t60" selected>a new step every minute</option><option value="t120">a new step every 2 minutes</option><option value="n5">into 5 equal steps</option><option value="n10">into 10 equal steps</option></select>
+          <button class="btn small" id="bEven">Split</button></div>
+        <p class="note">Then watch through and move each start time to where the step really begins. Tip: press <kbd>M</kbd> while the video plays to add a step at that moment.</p>
+       </div>
       </div>
       <div class="drawer hidden" id="pasteBox">
         <label class="q" for="stamps">One step per line, with its start time. YouTube chapter lists from a video description work as they are.</label>
@@ -618,8 +642,9 @@ function syncButtons() {
   const has = !!P && S.steps.length > 0;
   ['bBack', 'bReplay', 'bNext'].forEach(b => $(b).disabled = !has);
   $('bPlay').disabled = !P; $('bMark').disabled = !P;
-  $('bDetect').disabled = !(S.source && S.source.type === 'file');
-  $('bDetect').title = $('bDetect').disabled ? 'Works with uploaded video files. For YouTube, paste the chapter timestamps instead.' : '';
+  $('bDetect').disabled = !S.source;
+  const isYT = !!(S.source && S.source.type === 'yt');
+  $('ytFind').classList.toggle('hidden', !isYT); $('fileFind').classList.toggle('hidden', isYT);
   $('bShare').disabled = !(S.source && S.source.type === 'yt' && S.steps.length);
   $('bShare').title = $('bShare').disabled ? 'Share links work for YouTube videos with steps. For uploaded videos, download the project file.' : '';
   $('rulerHelp').textContent = S.mode === 'play' ? 'Click a step on the ruler to jump to it' : 'Click a step on the ruler to move there';
@@ -680,17 +705,78 @@ async function makeThumbs() {
 }
 
 /* ---------- timestamps ---------- */
-function parseStamps(text) {
-  const out = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim(); if (!line) continue;
-    const m = line.match(/((?:\d{1,2}:)?\d{1,2}:\d{2})/); if (!m) continue;
+function parseStamps(text, strict) {
+  const out = []; const TS = /((?:\d{1,2}:)?\d{1,2}:\d{2})(?!\d)/;
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const leading = lines.filter(l => /^[\s\-–—•*▶►(\[]*((?:\d{1,2}:)?\d{1,2}:\d{2})/.test(l));
+  const use = (strict || leading.length >= 3) ? leading : lines;
+  for (const line of use) {
+    const m = line.match(TS); if (!m) continue;
     const t = parseTime(m[1]); if (t === null) continue;
     const title = (line.slice(0, m.index) + ' ' + line.slice(m.index + m[1].length)).replace(/^[\s\-–—:|.)\]•*▶►]+|[\s\-–—:|(\[]+$/g, '').trim();
     out.push({ start: t, title: title || `Step ${out.length + 1}`, repeat: 'default', after: 'default' });
   }
   out.sort((a, b) => a.start - b.start);
   return out.filter((s, i) => i === 0 || s.start !== out[i - 1].start);
+}
+/* ---------- find steps for YouTube videos ---------- */
+const BUILT_IN_YT_KEY = '';   // whoever hosts Snipstep can put their own key here, so visitors don't need one
+let ytKey = '';
+function isoDur(s) { const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(s || ''); return m ? ((+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0)) : 0; }
+function showKeyState() {
+  const has = !!(ytKey || BUILT_IN_YT_KEY);
+  $('keyRow').classList.toggle('hidden', has); $('keySaved').classList.toggle('hidden', !ytKey); $('keyHelp').classList.toggle('hidden', has);
+}
+async function ytApi(path, params) {
+  const key = ytKey || BUILT_IN_YT_KEY; const q = new URLSearchParams(Object.assign({ key }, params));
+  let r; try { r = await fetch(`https://www.googleapis.com/youtube/v3/${path}?${q}`); }
+  catch (e) { throw new Error('Snipstep couldn\'t reach YouTube. Check your internet connection, and make sure Snipstep is opened from a website.'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const reason = (j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || '';
+    if (/keyInvalid|badRequest/.test(reason) || r.status === 400) throw new Error('That YouTube key doesn\'t work. Check that you copied all of it.');
+    if (/quota/i.test(reason)) throw new Error('The free daily limit for this key is used up. Try again tomorrow.');
+    if (/commentsDisabled/.test(reason)) return { items: [] };
+    if (r.status === 403) throw new Error('YouTube refused the key. Make sure "YouTube Data API v3" is enabled for it, and that this website is allowed in its restrictions.');
+    throw new Error('YouTube reported a problem (' + r.status + ').');
+  }
+  return j;
+}
+async function findYTSteps() {
+  if (!S.source || S.source.type !== 'yt') return;
+  if (!(ytKey || BUILT_IN_YT_KEY)) { $('ytStatus').textContent = 'Add your free YouTube key first.'; $('ytKey').focus(); return; }
+  if (S.steps.length && !S.ytArmed) { S.ytArmed = true; $('bFindYT').textContent = `Yes, replace my ${S.steps.length} steps`; $('ytStatus').textContent = 'This replaces the steps you have.'; return; }
+  S.ytArmed = false; $('bFindYT').textContent = 'Find steps'; $('bFindYT').disabled = true; $('ytStatus').textContent = 'Reading the video description…';
+  try {
+    const v = await ytApi('videos', { part: 'snippet,contentDetails', id: S.source.id });
+    if (!v.items || !v.items.length) throw new Error('YouTube couldn\'t find this video. It may be private or removed.');
+    const vid = v.items[0], D = isoDur(vid.contentDetails && vid.contentDetails.duration);
+    if (D && !S.duration) S.duration = D;
+    const ok = list => list.filter(s => !D || s.start < D - 1);
+    let steps = ok(parseStamps(vid.snippet.description || '', true)), from = 'the video description';
+    if (steps.length < 3) {
+      $('ytStatus').textContent = 'No chapters in the description. Checking the top comments…';
+      const c = await ytApi('commentThreads', { part: 'snippet', videoId: S.source.id, order: 'relevance', maxResults: 50, textFormat: 'plainText' });
+      for (const it of c.items || []) {
+        const txt = it.snippet.topLevelComment.snippet.textDisplay || '';
+        const st = ok(parseStamps(txt, true));
+        if (st.length >= 3) { steps = st; from = 'a top comment'; break; }
+      }
+    }
+    if (steps.length < 2) { $('ytStatus').textContent = 'This video has no chapter list. Use "Split it evenly" below, or press M while watching to mark steps.'; return; }
+    if (steps[0].start > 0) steps.unshift({ start: 0, title: 'Intro', repeat: 'default', after: 'default' });
+    S.steps = steps; S.cur = 0; renderAll(); scheduleSave();
+    $('ytStatus').textContent = `Found ${steps.length} steps in ${from}.`; toast(`${steps.length} steps found`);
+  } catch (e) { $('ytStatus').textContent = e.message; }
+  finally { $('bFindYT').disabled = false; }
+}
+function evenSplit() {
+  const D = dur(); if (!D) { toast('Play the video for a moment first, so Snipstep knows how long it is'); return; }
+  const v = $('evenBy').value; let starts = [];
+  if (v[0] === 't') { const gap = +v.slice(1); for (let t = 0; t < D - gap * 0.4; t += gap) starts.push(t); }
+  else { const n = +v.slice(1); for (let k = 0; k < n; k++) starts.push(D * k / n); }
+  S.steps = starts.map((t, i) => ({ start: +t.toFixed(2), title: `Step ${i + 1}`, repeat: 'default', after: 'default' }));
+  S.cur = 0; renderAll(); scheduleSave(); makeThumbs(); toast(`Split into ${S.steps.length} steps`);
 }
 const EXAMPLE = `0:00 Intro: what we'll make
 0:22 Cut list for a 30 cm doll
@@ -764,6 +850,11 @@ $('bScan').onclick = () => {
   if (S.steps.length && !S.scanArmed) { S.scanArmed = true; $('bScan').textContent = `Yes, replace my ${S.steps.length} steps`; $('scanStatus').textContent = 'Finding steps replaces the ones you have.'; return; }
   S.scanArmed = false; $('bScan').textContent = 'Find steps'; detectSteps(); };
 $('bScanStop').onclick = () => { scanAbort = true; };
+$('bFindYT').onclick = findYTSteps;
+$('bEven').onclick = evenSplit;
+$('bSaveKey').onclick = async () => { const k = $('ytKey').value.trim(); if (k.length < 20) { $('ytStatus').textContent = 'That doesn\'t look like a full key.'; return; }
+  ytKey = k; await store.set('snipstep:ytkey', k); $('ytKey').value = ''; showKeyState(); $('ytStatus').textContent = 'Key saved. Now press Find steps.'; };
+$('bChangeKey').onclick = async () => { ytKey = ''; await store.set('snipstep:ytkey', ''); showKeyState(); $('ytKey').focus(); };
 $('bExample').onclick = () => { $('stamps').value = EXAMPLE; };
 $('bUseStamps').onclick = () => { const st = parseStamps($('stamps').value);
   if (!st.length) { toast('No times found. Write each line like "1:03 Measure your doll"'); return; }
@@ -791,6 +882,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowRight') { e.preventDefault(); if (!$('bNext').disabled) $('bNext').click(); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); if (!$('bBack').disabled) $('bBack').click(); }
   else if (e.key.toLowerCase() === 'r') { if (!$('bReplay').disabled) $('bReplay').click(); }
+  else if (e.key.toLowerCase() === 'm') { if (S.mode === 'build' && P) $('bMark').click(); }
   else if (e.key === '-' || e.key === '_') { if (P) nudgeSpeed(-1); }
   else if (e.key === '+' || e.key === '=') { if (P) nudgeSpeed(1); }
 });
@@ -798,6 +890,7 @@ document.addEventListener('keydown', e => {
 /* ---------- start ---------- */
 (async () => {
   syncSettingsUI(); renderAll();
+  ytKey = (await store.get('snipstep:ytkey')) || ''; showKeyState();
   const h = location.hash.match(/#p=([\w-]+)/);
   if (h) { try { if (applyProject(JSON.parse(b64.dec(h[1])), true)) return; } catch (e) { toast('That share link is broken'); } }
   const saved = await store.get('snipstep:project');
