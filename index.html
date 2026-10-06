@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snipstep: turn any tutorial into steps</title>
+<style>
+:root{
+  --mat:#1E5B45; --mat-line:#2B7357; --paper:#FFFFFF; --ink:#1B2340;
+  --tape:#FFD23F; --pink:#FF5C8A; --muted:#66748A; --soft:#EEF2F7;
+  --round: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Trebuchet MS", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:var(--body); color:var(--ink); min-height:100vh;
+  background-color:var(--mat);
+  background-image:
+    linear-gradient(var(--mat-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mat-line) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size:120px 120px,120px 120px,24px 24px,24px 24px;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--tape);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+header{display:flex;align-items:center;gap:20px;padding:14px 24px;color:#fff;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--round);font-weight:800;font-size:24px;letter-spacing:.2px}
+.logo small{font-family:var(--body);font-weight:400;font-size:14px;opacity:.8;margin-left:6px}
+.tabs{margin-left:auto;display:flex;background:rgba(0,0,0,.22);border-radius:999px;padding:4px}
+.tabs button{border:0;background:transparent;color:#fff;padding:8px 18px;border-radius:999px;font-family:var(--round);font-weight:700;font-size:15px}
+.tabs button[aria-selected="true"]{background:var(--tape);color:var(--ink)}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;padding:0 24px 28px;max-width:1400px;margin:0 auto}
+@media (max-width:980px){main{grid-template-columns:1fr;padding:0 12px 20px}header{padding:12px}}
+.sheet{background:var(--paper);border-radius:16px;box-shadow:0 2px 0 rgba(0,0,0,.18),0 12px 30px rgba(0,0,0,.18)}
+.stage{padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.side{padding:18px;display:flex;flex-direction:column;gap:18px;max-height:calc(100vh - 90px);overflow:auto}
+@media (max-width:980px){.side{max-height:none}}
+
+.source{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.source .or{color:var(--muted);font-size:14px}
+.yt{flex:1;min-width:220px;display:flex;gap:8px}
+.yt input{flex:1;min-width:0;border:2px solid var(--soft);border-radius:10px;padding:9px 12px;background:#fff}
+.btn{border:2px solid var(--ink);background:#fff;border-radius:10px;padding:8px 14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover{background:var(--soft)}
+.btn.primary{background:var(--ink);color:#fff}
+.btn.primary:hover{background:#2c375d}
+.btn.tape{background:var(--tape);border-color:var(--tape);color:var(--ink)}
+.btn.tape:hover{filter:brightness(.96)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.small{padding:5px 10px;font-size:13px;border-width:1.5px}
+.link{border:0;background:none;color:var(--ink);text-decoration:underline;padding:0;font-size:13px}
+
+.screen{position:relative;aspect-ratio:16/9;background:#0d1424;border-radius:12px;overflow:hidden}
+.screen video,.screen iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#dfe6f3;padding:24px}
+.empty h2{font-family:var(--round);font-size:clamp(22px,3vw,32px);margin:0 0 8px;color:#fff}
+.empty p{margin:0 auto;max-width:46ch;line-height:1.5}
+.overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(13,20,36,.72);padding:16px;z-index:3}
+.overlay.on{display:flex}
+.card{background:#fff;border-radius:16px;padding:22px 24px;max-width:460px;width:100%;text-align:center}
+.card h3{font-family:var(--round);font-size:24px;margin:0 0 6px}
+.card p{margin:0 0 16px;color:var(--muted);line-height:1.45;overflow-wrap:anywhere}
+.card .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.ring{width:84px;height:84px;margin:0 auto 10px;position:relative}
+.ring svg{transform:rotate(-90deg)}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--round);font-size:30px}
+.toast{position:absolute;left:12px;top:12px;background:var(--tape);color:var(--ink);font-weight:700;border-radius:8px;padding:6px 12px;font-size:14px;z-index:2;opacity:0;transition:opacity .2s}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+.now{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;min-height:40px}
+.tag{background:var(--tape);font-family:var(--round);font-weight:800;padding:4px 12px;border-radius:6px;transform:rotate(-1.5deg);display:inline-block;font-size:15px}
+.now h2{font-family:var(--round);font-weight:800;font-size:clamp(20px,2.6vw,30px);margin:0;line-height:1.2}
+.now .loopinfo{color:var(--muted);font-size:14px;margin-left:auto}
+
+/* the ruler: the step timeline */
+.ruler{position:relative;height:64px;border-radius:8px;background:#FFE680;border:2px solid #E2B92A;overflow:hidden;user-select:none;touch-action:manipulation}
+.ruler::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:repeating-linear-gradient(90deg,rgba(60,45,10,.55) 0 1px,transparent 1px 10px),repeating-linear-gradient(90deg,rgba(60,45,10,.75) 0 2px,transparent 2px 50px);
+  background-size:100% 10px,100% 18px;background-repeat:no-repeat;background-position:0 0,0 0}
+.seg{position:absolute;top:0;bottom:0;border:0;border-right:2px solid rgba(60,45,10,.5);background:transparent;padding:0 0 6px 6px;display:flex;align-items:flex-end;font-family:var(--round);font-weight:800;font-size:15px;color:#5b4710;text-align:left;overflow:hidden}
+.seg:hover{background:rgba(255,255,255,.35)}
+.seg.cur{background:var(--pink);color:#fff}
+.seg .fill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.35);pointer-events:none}
+.seg span{position:relative}
+.playhead{position:absolute;top:0;bottom:0;width:3px;background:var(--ink);pointer-events:none;z-index:2}
+.rulerhint{font-size:13px;color:var(--muted);display:flex;justify-content:space-between}
+
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.controls .big{font-size:16px;padding:10px 16px}
+.controls .spacer{flex:1}
+.controls select{border:2px solid var(--soft);border-radius:10px;padding:8px}
+.speedctl{display:flex;gap:6px;align-items:center}
+.speedval{min-width:72px;justify-content:center;font-family:var(--round);font-weight:800}
+.speedval.slow{background:#E6F0FF;border-color:#2E62C9;color:#2E62C9}
+.speedval.fast{background:#FFE3EC;border-color:var(--pink);color:#C62E5C}
+.choice.speeds button{padding:7px 2px;font-size:13px}
+.spd{font-size:13px;font-weight:700;border-radius:6px;padding:2px 8px;background:#E6F0FF;color:#2E62C9}
+.spd.fast{background:#FFE3EC;color:#C62E5C}
+
+.panel h3{font-family:var(--round);font-size:18px;margin:0 0 10px}
+.panel p.help{margin:-4px 0 10px;color:var(--muted);font-size:14px;line-height:1.45}
+.opt{margin-bottom:14px}
+.opt label.q{display:block;font-weight:600;margin-bottom:6px;font-size:14px}
+.choice{display:flex;background:var(--soft);border-radius:10px;padding:3px;gap:3px}
+.choice button{flex:1;border:0;background:transparent;border-radius:8px;padding:8px 6px;font-weight:600;font-size:14px}
+.choice button[aria-pressed="true"]{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.sub{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:14px}
+.sub select{border:2px solid var(--soft);border-radius:8px;padding:5px 8px}
+.note{font-size:13px;color:var(--muted);margin-top:6px}
+
+.tools{display:flex;flex-wrap:wrap;gap:8px}
+.drawer{border:2px dashed var(--soft);border-radius:12px;padding:12px;margin-top:10px}
+.drawer textarea{width:100%;min-height:130px;border:2px solid var(--soft);border-radius:8px;padding:8px;font-size:13px;resize:vertical}
+.drawer .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.bar{height:8px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--pink)}
+input[type=range]{accent-color:var(--pink)}
+
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.step{border:2px solid var(--soft);border-radius:12px;padding:10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center}
+.step.cur{border-color:var(--pink)}
+.num{width:34px;height:34px;border-radius:8px;background:var(--tape);display:grid;place-items:center;font-family:var(--round);font-weight:800;overflow:hidden;position:relative}
+.num img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.num img+b{position:relative;background:var(--tape);font-size:12px;padding:0 4px;border-radius:4px;align-self:end;justify-self:start;margin:1px}
+.thumbed{width:64px;height:36px}
+.step input.title{border:1.5px solid transparent;border-radius:6px;padding:4px 6px;width:100%;font-weight:600;background:transparent}
+.step input.title:hover,.step input.title:focus{border-color:var(--soft);background:#fff}
+.step .x{border:0;background:none;color:var(--muted);font-size:18px;padding:2px 6px;border-radius:6px}
+.step .x:hover{background:var(--soft);color:var(--ink)}
+.step .meta{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:13px;color:var(--muted)}
+.step .meta input.time{width:64px;border:1.5px solid var(--soft);border-radius:6px;padding:3px 6px;text-align:center}
+.step .meta select{border:1.5px solid var(--soft);border-radius:6px;padding:2px 4px;font-size:13px}
+.playlist .step{grid-template-columns:auto 1fr auto;cursor:pointer;background:#fff;text-align:left;width:100%}
+.playlist .step:hover{background:var(--soft)}
+.playlist .dur{color:var(--muted);font-size:13px}
+.done-mark{color:#2B9A61;font-weight:800}
+.emptylist{color:var(--muted);font-size:14px;line-height:1.5;border:2px dashed var(--soft);border-radius:12px;padding:14px}
+.project{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.status{font-size:13px;color:var(--muted)}
+.share{margin-top:8px;display:none}
+.share.on{display:block}
+.share input{width:100%;border:2px solid var(--soft);border-radius:8px;padding:6px 8px;font-size:12px}
+.hidden{display:none!important}
+.kbd{font-size:12px;color:var(--muted)}
+@media (pointer:coarse){.keys{display:none}}
+kbd{background:var(--soft);border-radius:4px;padding:1px 5px;font-family:inherit}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo" aria-label="Snipstep">
+    <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true"><circle cx="10" cy="29" r="6" fill="none" stroke="#FFD23F" stroke-width="4"/><circle cx="10" cy="11" r="6" fill="none" stroke="#FF5C8A" stroke-width="4"/><path d="M15 14 L36 30 M15 26 L36 10" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>
+    Snipstep <small>turn any tutorial into steps</small>
+  </div>
+  <div class="tabs" role="tablist" aria-label="Mode">
+    <button role="tab" id="tabBuild" aria-selected="true">Make steps</button>
+    <button role="tab" id="tabPlay" aria-selected="false">Follow along</button>
+  </div>
+</header>
+
+<main>
+  <section class="sheet stage" aria-label="Video">
+    <div class="source" id="sourceBar">
+      <label class="btn tape" for="fileIn">Upload a video</label>
+      <input id="fileIn" class="sr" type="file" accept="video/*">
+      <span class="or">or</span>
+      <form class="yt" id="ytForm">
+        <label class="sr" for="ytIn">YouTube link</label>
+        <input id="ytIn" placeholder="Paste a YouTube link" autocomplete="off">
+        <button class="btn" type="submit">Load</button>
+      </form>
+    </div>
+
+    <div class="screen" id="screen">
+      <div class="empty" id="empty">
+        <div>
+          <h2>Add a tutorial to start</h2>
+          <p>Upload a video file or paste a YouTube link. Then split it into steps, and choose how each step plays.</p>
+        </div>
+      </div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="overlay" id="ovError"><div class="card">
+        <h3 id="errTitle">This video can't play here</h3><p id="errText"></p>
+        <div class="row"><label class="btn tape" for="fileIn">Upload a video file instead</label><button class="btn" id="errClose">Close</button></div>
+      </div></div>
+      <div class="overlay" id="ovStart"><div class="card">
+        <h3 id="startTitle">Ready?</h3><p id="startText"></p>
+        <div class="row"><button class="btn primary big" id="startBtn">Start step 1</button></div>
+      </div></div>
+      <div class="overlay" id="ovWait"><div class="card">
+        <h3 id="waitTitle">Step done</h3><p id="waitText">Take your time. Press Next when you're ready.</p>
+        <div class="row"><button class="btn" id="waitReplay">Replay this step</button><button class="btn primary" id="waitNext">Next step</button></div>
+      </div></div>
+      <div class="overlay" id="ovCount"><div class="card">
+        <div class="ring"><svg width="84" height="84"><circle cx="42" cy="42" r="36" stroke="#EEF2F7" stroke-width="8" fill="none"/><circle id="ringArc" cx="42" cy="42" r="36" stroke="#FF5C8A" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="226" stroke-dashoffset="0"/></svg><b id="countNum">3</b></div>
+        <h3 id="countTitle">Next step coming up</h3>
+        <div class="row"><button class="btn" id="countStay">Stay on this step</button><button class="btn primary" id="countGo">Go now</button></div>
+      </div></div>
+      <div class="overlay" id="ovDone"><div class="card">
+        <h3>All steps done!</h3><p id="doneText">You followed every step.</p>
+        <div class="row"><button class="btn" id="doneReplay">Replay last step</button><button class="btn primary" id="doneRestart">Start over</button></div>
+      </div></div>
+    </div>
+
+    <div class="now" id="now"></div>
+    <div class="ruler" id="ruler" aria-label="Steps timeline"></div>
+    <div class="rulerhint"><span id="tNow">0:00</span><span id="rulerHelp">Click the ruler to move through the video</span><span id="tDur">0:00</span></div>
+
+    <div class="controls">
+      <button class="btn big" id="bBack" aria-label="Previous step">◀ Back</button>
+      <button class="btn big" id="bReplay">↻ Replay step</button>
+      <button class="btn primary big" id="bPlay" aria-label="Play or pause">▶ Play</button>
+      <button class="btn big" id="bNext" aria-label="Next step">Next ▶</button>
+      <span class="spacer"></span>
+      <div class="speedctl" role="group" aria-label="Video speed">
+        <button class="btn big" id="bSlower" aria-label="Slower">− Slower</button>
+        <button class="btn big speedval" id="bSpeed" title="Back to normal speed">1×</button>
+        <button class="btn big" id="bFaster" aria-label="Faster">Faster +</button>
+      </div>
+    </div>
+    <div class="kbd keys">Keys: <kbd>Space</kbd> play or pause, <kbd>→</kbd> next step, <kbd>←</kbd> back, <kbd>R</kbd> replay step, <kbd>−</kbd> slower, <kbd>+</kbd> faster</div>
+  </section>
+
+  <aside class="sheet side" aria-label="Steps and settings">
+    <div class="panel" id="buildTools">
+      <h3>Split the video into steps</h3>
+      <p class="help">Play the video and press "Mark a step here" each time a new step begins. Or let Snipstep find them for you.</p>
+      <div class="tools">
+        <button class="btn primary" id="bMark">+ Mark a step here</button>
+        <button class="btn" id="bDetect">Find steps automatically</button>
+        <button class="btn" id="bPaste">Paste timestamps</button>
+      </div>
+      <div class="drawer hidden" id="detectBox">
+        <div class="opt"><label class="q" for="sens">How many steps?</label>
+          <div class="sub"><span>Fewer</span><input id="sens" type="range" min="1" max="10" value="5"><span>More</span></div></div>
+        <div class="sub"><label for="minLen">Shortest step</label><select id="minLen"><option value="5">5 seconds</option><option value="10" selected>10 seconds</option><option value="20">20 seconds</option><option value="40">40 seconds</option></select></div>
+        <div class="row"><button class="btn tape" id="bScan">Find steps</button><button class="btn hidden" id="bScanStop">Stop</button><span class="status" id="scanStatus"></span></div>
+        <div class="bar"><i id="scanBar"></i></div>
+        <p class="note">Snipstep looks for scene changes in the video. Rename the steps afterwards, and delete any extras.</p>
+      </div>
+      <div class="drawer hidden" id="pasteBox">
+        <label class="q" for="stamps">One step per line, with its start time. YouTube chapter lists from a video description work as they are.</label>
+        <textarea id="stamps" placeholder="0:00 Intro&#10;1:03 Measure your doll&#10;1:20 Make the top pattern"></textarea>
+        <div class="row"><button class="btn tape" id="bUseStamps">Use these steps</button><button class="link" id="bExample">Fill in the doll dress example</button></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>How each step plays</h3>
+      <p class="help">These settings work in both tabs.</p>
+      <div class="opt"><label class="q">Each step</label>
+        <div class="choice" id="cRepeat"><button data-v="once" aria-pressed="true">Play once</button><button data-v="loop" aria-pressed="false">Repeat</button></div>
+        <div class="sub" id="repeatTimesRow"><label for="repeatTimes">Repeat</label><select id="repeatTimes"><option value="2">2 times</option><option value="3">3 times</option><option value="5">5 times</option><option value="0">nonstop, until I press Next</option></select></div>
+      </div>
+      <div class="opt"><label class="q">Video speed</label>
+        <div class="choice speeds" id="cSpeed"></div>
+        <p class="note">Slow down tricky steps, or speed up the easy parts. You can also give one step its own speed in "Make steps".</p>
+      </div>
+      <div class="opt" id="afterOpt"><label class="q">When a step ends</label>
+        <div class="choice" id="cAfter"><button data-v="wait" aria-pressed="true">Wait for me</button><button data-v="auto" aria-pressed="false">Go on by itself</button></div>
+        <div class="sub" id="delayRow"><label for="delay">Next step starts</label><select id="delay"><option value="0">right away</option><option value="3" selected>after 3 seconds</option><option value="5">after 5 seconds</option><option value="10">after 10 seconds</option></select></div>
+        <p class="note" id="afterNote"></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 id="listTitle">Steps</h3>
+      <ul class="steps" id="steps"></ul>
+    </div>
+
+    <div class="panel" id="projectPanel">
+      <h3>Save and share</h3>
+      <div class="project">
+        <button class="btn small" id="bExport">Download project file</button>
+        <label class="btn small" for="importIn">Open project file</label><input id="importIn" class="sr" type="file" accept=".json,application/json">
+        <button class="btn small" id="bShare">Copy share link</button>
+        <span class="status" id="saveStatus"></span>
+      </div>
+      <div class="share" id="shareBox"><label class="note" for="shareIn">Anyone with this link sees your steps with the same settings. It works when Snipstep is hosted on a website.</label><input id="shareIn" readonly></div>
+      <p class="note">Your steps save automatically on this device. Uploaded videos stay on your device and are never sent anywhere.</p>
+    </div>
+  </aside>
+</main>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const S = {
+  source: null, steps: [], cur: 0, loopsDone: 0, mode: 'build', state: 'idle',
+  settings: { repeat: 'once', repeatTimes: 2, after: 'wait', delay: 3, speed: 1 },
+  thumbs: {}, duration: 0
+};
+let P = null, countTimer = null, scanAbort = false, saveTimer = null, fileObj = null;
+
+/* ---------- helpers ---------- */
+document.addEventListener('securitypolicyviolation', e => { if (/^(blob|data)/.test(e.blockedURI || '') || /media-src/.test(e.violatedDirective || '')) S.cspBlocked = true; });
+const fmt = t => { if (!isFinite(t) || t < 0) t = 0; t = Math.floor(t); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); };
+const parseTime = s => { const p = String(s).trim().split(':').map(Number); if (p.some(isNaN)) return null; return p.reduce((a, b) => a * 60 + b, 0); };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function showError(title, text) { $('errTitle').textContent = title; $('errText').textContent = text; $('ovError').classList.add('on'); }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 1600); }
+const dur = () => (P && P.duration()) || S.duration || 0;
+const stepEnd = i => i + 1 < S.steps.length ? S.steps[i + 1].start : (dur() || Infinity);
+const stepAt = t => { let k = 0; S.steps.forEach((s, i) => { if (t >= s.start - 0.01) k = i; }); return k; };
+function sortSteps() { S.steps.sort((a, b) => a.start - b.start); }
+
+/* ---------- storage ---------- */
+const store = {
+  async get(k) { try { if (window.storage) { const r = await window.storage.get(k, false); return r ? r.value : null; } } catch (e) { return null; }
+    try { return window.localStorage.getItem(k); } catch (e) { return null; } },
+  async set(k, v) { try { if (window.storage) { await window.storage.set(k, v, false); return true; } } catch (e) { return false; }
+    try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+};
+function projectData() {
+  const src = !S.source ? null : S.source.type === 'yt' ? { type: 'yt', id: S.source.id } : { type: 'file', name: S.source.name, size: S.source.size };
+  return { app: 'snipstep', v: 1, source: src, steps: S.steps.map(s => ({ start: +s.start.toFixed(2), title: s.title, repeat: s.repeat || 'default', after: s.after || 'default', speed: s.speed || 'default' })), settings: S.settings };
+}
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => { const ok = await store.set('snipstep:project', JSON.stringify(projectData())); $('saveStatus').textContent = ok ? 'Saved' : ''; }, 500);
+}
+function applyProject(p, fromShare) {
+  if (!p || p.app !== 'snipstep') return false;
+  S.steps = (p.steps || []).map(s => ({ start: +s.start || 0, title: s.title || 'Step', repeat: s.repeat || 'default', after: s.after || 'default', speed: s.speed || 'default' }));
+  sortSteps(); Object.assign(S.settings, p.settings || {}); S.cur = 0;
+  syncSettingsUI(); renderAll();
+  if (p.source && p.source.type === 'yt') loadYouTube(p.source.id, true);
+  else if (p.source && p.source.type === 'file') {
+    S.pendingFile = p.source;
+    $('empty').querySelector('h2').textContent = 'Choose the video file to continue';
+    $('empty').querySelector('p').textContent = `Your steps are ready. Upload "${p.source.name}" again to use them.`;
+  }
+  if (fromShare && S.steps.length) setMode('play');
+  return true;
+}
+const b64 = { enc: s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: s => decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/')))) };
+
+/* ---------- players ---------- */
+function filePlayer(url, file) {
+  const v = document.createElement('video'); v.src = url; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto'; v.controls = true;
+  let triedData = false;
+  v.addEventListener('loadedmetadata', () => { S.duration = v.duration; v.playbackRate = effSpeed(S.cur); $('ovError').classList.remove('on'); renderAll(); applySpeed(false); });
+  v.addEventListener('error', () => {
+    const code = v.error ? v.error.code : 0;
+    if (!triedData && file && file.size < 300 * 1024 * 1024) {
+      triedData = true; toast('Trying another way to open the video');
+      const r = new FileReader();
+      r.onload = () => { if (S.source) S.source.url = r.result; v.src = r.result; v.load(); };
+      r.onerror = () => explain(code);
+      r.readAsDataURL(file); return;
+    }
+    explain(code);
+  });
+  function explain(code) {
+    const type = (file && file.type) || 'unknown type';
+    const h264 = v.canPlayType('video/mp4; codecs="avc1.42E01E"');
+    const details = `Details: ${file ? file.name : 'video'}, ${type}, ${file ? Math.round(file.size / 1048576) + ' MB' : ''}, error ${code}, H.264 support "${h264 || 'none'}"${S.cspBlocked ? ', blocked by page' : ''}`;
+    if (S.cspBlocked) showError('This window won\'t play uploaded videos',
+      'The page you opened Snipstep in blocks uploaded videos. Open Snipstep in a normal browser tab such as Chrome, Safari or Edge, from a website link. ' + details);
+    else if (!h264) showError('This browser can\'t play MP4 videos',
+      'Open Snipstep in Chrome, Safari, Edge or Firefox instead. ' + details);
+    else showError('This browser can\'t play this video file',
+      'The video may use a format this browser doesn\'t support. iPhone videos saved as "High Efficiency" often cause this. Save or convert it as an MP4 (H.264) file and upload it again. ' + details);
+  }
+  const api = { el: v, kind: 'file',
+    play: () => { const p = v.play(); if (p && p.catch) p.catch(err => { if (err && err.name === 'NotAllowedError') toast('Tap the play button on the video to start'); }); },
+    pause: () => v.pause(),
+    seek: t => { v.currentTime = Math.max(0, t); }, time: () => v.currentTime, duration: () => v.duration || 0,
+    rate: r => { v.playbackRate = r; }, paused: () => v.paused, destroy: () => { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } };
+  return api;
+}
+function ytPlayer(id) {
+  const f = document.createElement('iframe');
+  const origin = (location.origin && location.origin !== 'null' && location.protocol.startsWith('http')) ? '&origin=' + encodeURIComponent(location.origin) : '';
+  f.src = `https://www.youtube.com/embed/${id}?enablejsapi=1&playsinline=1&rel=0&modestbranding=1${origin}`;
+  f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.title = 'YouTube video';
+  f.referrerPolicy = 'strict-origin-when-cross-origin';
+  const failTimer = setTimeout(() => { if (!ready) showError('YouTube isn\'t responding',
+    'Snipstep can\'t control this YouTube video from here. This usually happens when the page is opened straight from your computer, or inside a preview window. Open Snipstep from a website, or upload the video file instead.'); }, 9000);
+  const info = { currentTime: 0, duration: 0, playerState: -1 }; let stamp = performance.now(), rate = 1, ready = false, pinger = null;
+  const post = o => { try { f.contentWindow.postMessage(JSON.stringify(Object.assign({ id: 1, channel: 'widget' }, o)), '*'); } catch (e) {} };
+  const send = (func, args = []) => post({ event: 'command', func, args });
+  const onMsg = e => {
+    let host = ''; try { host = new URL(e.origin).hostname; } catch (err) { return; }
+    if (!/youtube(-nocookie)?\.com$/.test(host)) return;
+    let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
+    if (!d) return;
+    if (d.event === 'onReady' || d.event === 'initialDelivery') { if (!ready) { ready = true; clearInterval(pinger); clearTimeout(failTimer); send('setPlaybackRate', [effSpeed(S.cur)]); setTimeout(() => send('setPlaybackRate', [effSpeed(S.cur)]), 800); } }
+    if (d.event === 'onError') {
+      const c = +d.info; const why = c === 101 || c === 150 || c === 152 ? 'The owner of this video doesn\'t allow it to play on other websites.'
+        : c === 100 ? 'This video was removed or is private.' : c === 2 ? 'That link doesn\'t point to a valid video.'
+        : c === 153 ? 'YouTube needs this page to be opened from a website, not straight from your computer.' : 'YouTube reported a problem playing it (error ' + c + ').';
+      showError('This YouTube video can\'t play here', why + ' You can upload the video file instead.');
+    }
+    if (d.info && typeof d.info === 'object') {
+      if ('currentTime' in d.info) { info.currentTime = d.info.currentTime; stamp = performance.now(); }
+      if (d.info.duration) { info.duration = d.info.duration; if (!S.duration) { S.duration = info.duration; renderAll(); } }
+      if ('playerState' in d.info) { info.playerState = d.info.playerState; stamp = performance.now(); }
+      if (d.info.playbackRate) rate = d.info.playbackRate;
+    }
+    if (d.event === 'onStateChange') { info.playerState = d.info; stamp = performance.now(); }
+  };
+  window.addEventListener('message', onMsg);
+  f.addEventListener('load', () => { post({ event: 'listening' }); let n = 0; pinger = setInterval(() => { if (ready || n++ > 40) clearInterval(pinger); else post({ event: 'listening' }); }, 250); });
+  const api = { el: f, kind: 'yt',
+    play: () => send('playVideo'), pause: () => { info.currentTime = api.time(); info.playerState = 2; stamp = performance.now(); send('pauseVideo'); },
+    seek: t => { send('seekTo', [Math.max(0, t), true]); info.currentTime = t; stamp = performance.now(); },
+    time: () => info.currentTime + (info.playerState === 1 ? Math.min(1.2, (performance.now() - stamp) / 1000) * rate : 0),
+    duration: () => info.duration, rate: r => { rate = r; send('setPlaybackRate', [r]); },
+    paused: () => info.playerState !== 1 && info.playerState !== 3,
+    destroy: () => { window.removeEventListener('message', onMsg); clearInterval(pinger); clearTimeout(failTimer); f.remove(); } };
+  return api;
+}
+function mountPlayer(p) {
+  $('ovError').classList.remove('on');
+  if (P) P.destroy();
+  P = p; S.duration = 0; $('screen').prepend(p.el); $('empty').classList.add('hidden');
+  applySpeed(false);
+}
+function loadFile(file) {
+  if (!file) return;
+  fileObj = file; const url = URL.createObjectURL(file);
+  const same = S.pendingFile && S.pendingFile.name === file.name;
+  if (!same) { S.steps = []; S.thumbs = {}; }
+  S.pendingFile = null; S.source = { type: 'file', name: file.name, size: file.size, url };
+  mountPlayer(filePlayer(url, file)); S.cur = 0; hideOverlays();
+  renderAll(); scheduleSave(); toast(same ? 'Video found. Your steps are back.' : 'Video loaded');
+  if (same && S.mode === 'play') showStart();
+  setTimeout(makeThumbs, 400);
+}
+function ytId(u) {
+  u = (u || '').trim(); if (/^[\w-]{11}$/.test(u)) return u;
+  try { const x = new URL(/^https?:/i.test(u) ? u : 'https://' + u); const h = x.hostname.replace(/^(www|m|music)\./, '');
+    if (h === 'youtu.be') return x.pathname.slice(1, 12) || null;
+    if (/youtube(-nocookie)?\.com$/.test(h)) { const v = x.searchParams.get('v'); if (v) return v.slice(0, 11);
+      const m = x.pathname.match(/\/(embed|shorts|live|v)\/([\w-]{11})/); if (m) return m[2]; } } catch (e) {}
+  return null;
+}
+function loadYouTube(id, keepSteps) {
+  if (!keepSteps) { S.steps = []; }
+  S.thumbs = {}; S.source = { type: 'yt', id }; fileObj = null;
+  mountPlayer(ytPlayer(id));
+  if (location.protocol === 'file:') {
+    showError('YouTube needs Snipstep to be on a website',
+      'You opened Snipstep straight from your computer, and YouTube blocks its player there. Put Snipstep on a free website (for example Netlify Drop or GitHub Pages) and open it from that link. Uploaded video files work right now.');
+  }
+  S.cur = 0; hideOverlays(); renderAll(); scheduleSave();
+  if (keepSteps && S.mode === 'play' && S.steps.length) showStart();
+}
+
+/* ---------- step engine ---------- */
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const sx = r => (+r).toString().replace(/^0\./, '0.') + '×';
+function effSpeed(i) { const s = S.steps[i]; return s && s.speed && s.speed !== 'default' ? +s.speed : +S.settings.speed || 1; }
+function applySpeed(announce) {
+  const r = effSpeed(S.cur); if (P) P.rate(r);
+  const b = $('bSpeed'); b.textContent = sx(r); b.classList.toggle('slow', r < 1); b.classList.toggle('fast', r > 1);
+  b.title = r === 1 ? 'Normal speed' : 'Back to normal speed';
+  $('bSlower').disabled = !P || r <= SPEEDS[0]; $('bFaster').disabled = !P || r >= SPEEDS[SPEEDS.length - 1];
+  [...$('cSpeed').children].forEach(c => c.setAttribute('aria-pressed', +c.dataset.v === +S.settings.speed));
+  if (announce) toast(r === 1 ? 'Normal speed' : `Speed ${sx(r)}${r < 1 ? ' (slower)' : ' (faster)'}`);
+  if (S.steps.length) renderNow();
+}
+function setSpeed(r, announce = true) {
+  const s = S.steps[S.cur];
+  if (s && s.speed && s.speed !== 'default') { s.speed = String(r); renderSteps(); }  // this step has its own speed: change that
+  else S.settings.speed = r;
+  applySpeed(announce); scheduleSave();
+}
+function nudgeSpeed(dir) { const r = effSpeed(S.cur); const i = SPEEDS.findIndex(v => v >= r - 1e-6);
+  const j = clamp((i < 0 ? 3 : i) + dir, 0, SPEEDS.length - 1); setSpeed(SPEEDS[j]); }
+function effRepeat(i) { const s = S.steps[i] || {}; const mode = s.repeat && s.repeat !== 'default' ? s.repeat : S.settings.repeat;
+  return { mode, times: +S.settings.repeatTimes || 0 }; }
+function effAfter(i) { const s = S.steps[i] || {}; const mode = s.after && s.after !== 'default' ? s.after : S.settings.after;
+  return { mode, delay: +S.settings.delay || 0 }; }
+function hideOverlays() { ['ovStart', 'ovWait', 'ovCount', 'ovDone'].forEach(o => $(o).classList.remove('on')); clearInterval(countTimer); if (S.state !== 'playing') S.state = 'idle'; }
+function goStep(i, play = true) {
+  if (!P || !S.steps.length) return;
+  hideOverlays(); S.cur = clamp(i, 0, S.steps.length - 1); S.loopsDone = 0;
+  P.seek(S.steps[S.cur].start); applySpeed(false); if (play) { P.play(); S.state = 'playing'; } else S.state = 'idle';
+  renderAll();
+}
+function onStepEnd() {
+  const rep = effRepeat(S.cur);
+  if (rep.mode === 'loop' && (rep.times === 0 || S.loopsDone + 1 < rep.times)) {
+    S.loopsDone++; P.seek(S.steps[S.cur].start); P.play();
+    toast(rep.times ? `Playing again (${S.loopsDone + 1} of ${rep.times})` : 'Playing the step again'); renderNow(); return;
+  }
+  P.pause(); S.state = 'ended';
+  if (S.cur >= S.steps.length - 1) { $('doneText').textContent = `You followed all ${S.steps.length} steps.`; $('ovDone').classList.add('on'); return; }
+  const after = effAfter(S.cur); const nxt = S.steps[S.cur + 1];
+  if (after.mode === 'auto') {
+    if (after.delay <= 0) { goStep(S.cur + 1); return; }
+    let left = after.delay; $('countTitle').textContent = `Next: ${nxt.title}`; $('countNum').textContent = left;
+    $('ringArc').style.strokeDashoffset = 0; $('ovCount').classList.add('on');
+    const t0 = performance.now();
+    countTimer = setInterval(() => {
+      const el = (performance.now() - t0) / 1000; left = Math.ceil(after.delay - el);
+      $('countNum').textContent = Math.max(0, left); $('ringArc').style.strokeDashoffset = 226 * clamp(el / after.delay, 0, 1);
+      if (el >= after.delay) { clearInterval(countTimer); goStep(S.cur + 1); }
+    }, 100);
+  } else {
+    $('waitTitle').textContent = `Step ${S.cur + 1} is done`;
+    $('waitText').textContent = 'Take your time. Press Next when you\'re ready.';
+    $('waitNext').textContent = `Next: ${nxt.title}`; $('ovWait').classList.add('on');
+  }
+}
+function tick() {
+  if (P) {
+    const t = P.time(), playing = !P.paused();
+    if (S.steps.length) {
+      // the video started from its own controls: follow it
+      if ((S.state === 'idle' || S.state === 'paused') && playing) { S.state = 'playing'; hideOverlays(); S.cur = stepAt(t); renderAll(); }
+      // waiting for the learner: never let the video run on
+      if (S.state === 'ended' && playing) P.pause();
+      if (S.state === 'playing' && playing) {
+        const st = S.steps[S.cur].start, end = stepEnd(S.cur);
+        if (t < st - 1.5 || t > end + 1.5) { S.cur = stepAt(t); S.loopsDone = 0; renderAll(); }
+        else if (t >= end - 0.08) onStepEnd();
+      }
+      if (!playing && S.state !== 'ended') { const k = stepAt(t); if (k !== S.cur) { S.cur = k; S.loopsDone = 0; renderSteps(); renderNow(); renderRuler(); applySpeed(false); } }
+    }
+    updateProgress(t);
+  }
+  $('bPlay').textContent = P && !P.paused() ? '❚❚ Pause' : '▶ Play';
+}
+setInterval(tick, 80);
+
+function showStart() {
+  if (!S.steps.length) return;
+  $('startTitle').textContent = `Ready? ${S.steps.length} steps`;
+  $('startText').textContent = `Step ${S.cur + 1}: ${S.steps[S.cur].title}`;
+  $('startBtn').textContent = S.cur ? `Start step ${S.cur + 1}` : 'Start step 1';
+  $('ovStart').classList.add('on');
+}
+
+/* ---------- rendering ---------- */
+function renderRuler() {
+  const r = $('ruler'); r.innerHTML = ''; const D = dur();
+  if (!D || !S.steps.length) { r.innerHTML = '<div class="playhead" id="ph" style="left:0"></div>'; return; }
+  S.steps.forEach((s, i) => {
+    const a = s.start / D, b = Math.min(stepEnd(i), D) / D; const btn = document.createElement('button');
+    btn.className = 'seg' + (i === S.cur ? ' cur' : ''); btn.style.left = (a * 100) + '%'; btn.style.width = ((b - a) * 100) + '%';
+    btn.title = `Step ${i + 1}: ${s.title}`; btn.setAttribute('aria-label', btn.title);
+    btn.innerHTML = `<i class="fill" ${i === S.cur ? 'id="segFill"' : ''}></i><span>${i + 1}</span>`;
+    btn.addEventListener('click', e => { e.stopPropagation(); if (S.mode === 'play') goStep(i); else { P.seek(s.start); } });
+    r.appendChild(btn);
+  });
+  const ph = document.createElement('div'); ph.className = 'playhead'; ph.id = 'ph'; r.appendChild(ph);
+}
+function updateProgress(t) {
+  const D = dur(); $('tNow').textContent = fmt(t); $('tDur').textContent = fmt(D);
+  const ph = $('ph'); if (ph && D) ph.style.left = clamp(t / D * 100, 0, 100) + '%';
+  const f = $('segFill'); if (f && S.steps[S.cur]) { const a = S.steps[S.cur].start, b = Math.min(stepEnd(S.cur), D || Infinity);
+    f.style.width = clamp((t - a) / ((b - a) || 1) * 100, 0, 100) + '%'; }
+}
+function renderNow() {
+  const n = $('now');
+  if (!S.steps.length) { n.innerHTML = S.source ? `<h2>${S.mode === 'play' ? 'Add steps first in "Make steps"' : 'No steps yet'}</h2>` : ''; return; }
+  const s = S.steps[S.cur]; const rep = effRepeat(S.cur);
+  const loop = rep.mode === 'loop' ? (rep.times ? `Playing ${Math.min(S.loopsDone + 1, rep.times)} of ${rep.times}` : 'Replays until you press Next') : '';
+  const r = effSpeed(S.cur); const spd = r === 1 ? '' : `<span class="spd ${r > 1 ? 'fast' : ''}">${sx(r)} speed</span>`;
+  n.innerHTML = `<span class="tag">Step ${S.cur + 1} of ${S.steps.length}</span><h2>${esc(s.title)}</h2>${spd}<span class="loopinfo">${loop}</span>`;
+}
+function renderSteps() {
+  const ul = $('steps'); ul.innerHTML = '';
+  $('listTitle').textContent = S.steps.length ? `Steps (${S.steps.length})` : 'Steps';
+  if (!S.steps.length) {
+    ul.innerHTML = `<li class="emptylist">${S.source ? 'No steps yet. Mark them while the video plays, find them automatically, or paste timestamps.' : 'Your steps will show up here once you add a video.'}</li>`; return;
+  }
+  const D = dur();
+  S.steps.forEach((s, i) => {
+    const li = document.createElement('li');
+    const th = S.thumbs[s.start.toFixed(1)];
+    const num = th ? `<span class="num thumbed"><img alt="" src="${th}"><b>${i + 1}</b></span>` : `<span class="num">${i + 1}</span>`;
+    const len = isFinite(stepEnd(i)) ? fmt(stepEnd(i) - s.start) : '';
+    if (S.mode === 'build') {
+      li.className = 'step' + (i === S.cur ? ' cur' : '');
+      li.innerHTML = `${num}<input class="title" aria-label="Step ${i + 1} name" value="${esc(s.title)}"><button class="x" aria-label="Delete step ${i + 1}" title="Delete step">✕</button>
+        <div class="meta"><label>Starts <input class="time" value="${fmt(s.start)}" aria-label="Step ${i + 1} start time"></label>
+        <button class="btn small now-btn">Use current time</button>
+        <label>Each time <select class="rep"><option value="default">default</option><option value="once">play once</option><option value="loop">repeat</option></select></label>
+        <label>Then <select class="aft"><option value="default">default</option><option value="wait">wait</option><option value="auto">go on</option></select></label>
+        <label>Speed <select class="spdsel"><option value="default">default</option>${SPEEDS.map(v => `<option value="${v}">${sx(v)}</option>`).join('')}</select></label>
+        <span>${len}</span></div>`;
+      li.querySelector('.rep').value = s.repeat || 'default'; li.querySelector('.aft').value = s.after || 'default'; li.querySelector('.spdsel').value = s.speed ? String(+s.speed || 'default') : 'default';
+      li.querySelector('.title').addEventListener('change', e => { s.title = e.target.value.trim() || `Step ${i + 1}`; renderNow(); renderRuler(); scheduleSave(); });
+      li.querySelector('.time').addEventListener('change', e => { const v = parseTime(e.target.value); if (v === null) { e.target.value = fmt(s.start); return; }
+        s.start = clamp(v, 0, D || v); sortSteps(); renderAll(); scheduleSave(); makeThumbs(); });
+      li.querySelector('.now-btn').addEventListener('click', () => { if (!P) return; s.start = +P.time().toFixed(2); sortSteps(); renderAll(); scheduleSave(); makeThumbs(); });
+      li.querySelector('.rep').addEventListener('change', e => { s.repeat = e.target.value; scheduleSave(); renderNow(); });
+      li.querySelector('.aft').addEventListener('change', e => { s.after = e.target.value; scheduleSave(); });
+      li.querySelector('.spdsel').addEventListener('change', e => { s.speed = e.target.value; if (i === S.cur) applySpeed(true); scheduleSave(); renderNow(); });
+      li.querySelector('.x').addEventListener('click', () => { S.steps.splice(i, 1); S.cur = clamp(S.cur, 0, Math.max(0, S.steps.length - 1)); renderAll(); scheduleSave(); });
+      li.querySelector('.num').addEventListener('click', () => P && P.seek(s.start));
+      ul.appendChild(li);
+    } else {
+      li.innerHTML = `<button class="step ${i === S.cur ? 'cur' : ''}">${num}<span><b>${esc(s.title)}</b>${s.speed && s.speed !== 'default' ? ` <span class="spd ${+s.speed > 1 ? 'fast' : ''}">${sx(s.speed)}</span>` : ''}</span><span class="dur">${i < S.cur ? '<span class="done-mark" aria-label="done">✓</span> ' : ''}${len}</span></button>`;
+      li.firstElementChild.addEventListener('click', () => goStep(i));
+      ul.appendChild(li); ul.classList.add('playlist');
+    }
+  });
+  if (S.mode === 'build') ul.classList.remove('playlist');
+}
+let lastSpeedStep = -1;
+function renderAll() { renderRuler(); renderNow(); renderSteps(); syncButtons(); if (S.cur !== lastSpeedStep) { lastSpeedStep = S.cur; applySpeed(false); } }
+function syncButtons() {
+  const has = !!P && S.steps.length > 0;
+  ['bBack', 'bReplay', 'bNext'].forEach(b => $(b).disabled = !has);
+  $('bPlay').disabled = !P; $('bMark').disabled = !P;
+  $('bDetect').disabled = !(S.source && S.source.type === 'file');
+  $('bDetect').title = $('bDetect').disabled ? 'Works with uploaded video files. For YouTube, paste the chapter timestamps instead.' : '';
+  $('bShare').disabled = !(S.source && S.source.type === 'yt' && S.steps.length);
+  $('bShare').title = $('bShare').disabled ? 'Share links work for YouTube videos with steps. For uploaded videos, download the project file.' : '';
+  $('rulerHelp').textContent = S.mode === 'play' ? 'Click a step on the ruler to jump to it' : 'Click a step on the ruler to move there';
+}
+function syncSettingsUI() {
+  const st = S.settings;
+  [...$('cRepeat').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === st.repeat));
+  [...$('cAfter').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === st.after));
+  $('repeatTimes').value = String(st.repeatTimes); $('delay').value = String(st.delay); applySpeed(false);
+  $('repeatTimesRow').classList.toggle('hidden', st.repeat !== 'loop');
+  $('delayRow').classList.toggle('hidden', st.after !== 'auto');
+  const infinite = st.repeat === 'loop' && +st.repeatTimes === 0;
+  $('cAfter').style.opacity = infinite ? .45 : 1;
+  $('afterNote').textContent = infinite ? 'Each step keeps replaying by itself until you press Next. To have the video stop and wait instead, choose "Play once", or repeat a set number of times.' :
+    st.after === 'auto' ? 'After each step, the next one starts by itself.' : (st.repeat === 'loop' ? `Each step plays ${st.repeatTimes} times, then the video stops until you press Next.` : 'After each step, the video stops until you press Next.');
+}
+
+/* ---------- auto-detect steps (uploaded files) ---------- */
+const once = (el, ev) => new Promise(res => el.addEventListener(ev, res, { once: true }));
+async function detectSteps() {
+  if (!S.source || S.source.type !== 'file') return;
+  scanAbort = false; $('bScan').disabled = true; $('bScanStop').classList.remove('hidden');
+  const v = document.createElement('video'); v.muted = true; v.preload = 'auto'; v.src = S.source.url;
+  await once(v, 'loadedmetadata');
+  const D = v.duration, c = document.createElement('canvas'); c.width = 64; c.height = 36; const ctx = c.getContext('2d', { willReadFrequently: true });
+  const stepT = D > 1200 ? 1 : 0.5, diffs = []; let prev = null;
+  for (let t = 0; t < D; t += stepT) {
+    if (scanAbort) break;
+    v.currentTime = t; await once(v, 'seeked');
+    ctx.drawImage(v, 0, 0, 64, 36); const d = ctx.getImageData(0, 0, 64, 36).data; const g = new Float32Array(64 * 36);
+    for (let k = 0; k < g.length; k++) g[k] = d[k * 4] * .3 + d[k * 4 + 1] * .59 + d[k * 4 + 2] * .11;
+    if (prev) { let s = 0; for (let k = 0; k < g.length; k++) s += Math.abs(g[k] - prev[k]); diffs.push({ t, d: s / g.length }); }
+    prev = g; $('scanBar').style.width = (t / D * 100) + '%'; $('scanStatus').textContent = `Looking… ${Math.round(t / D * 100)}%`;
+  }
+  $('bScan').disabled = false; $('bScanStop').classList.add('hidden');
+  if (scanAbort) { $('scanStatus').textContent = 'Stopped'; return; }
+  const vals = diffs.map(x => x.d), mean = vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
+  const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length || 1));
+  const k = 3.2 - (+$('sens').value) * 0.27, thr = mean + k * sd, minLen = +$('minLen').value;
+  const peaks = diffs.filter((x, i) => x.d > thr && (!diffs[i - 1] || x.d >= diffs[i - 1].d) && (!diffs[i + 1] || x.d >= diffs[i + 1].d)).sort((a, b) => b.d - a.d);
+  const cuts = [];
+  for (const p of peaks) if (p.t > minLen * 0.5 && D - p.t > minLen * 0.5 && cuts.every(c2 => Math.abs(c2 - p.t) >= minLen)) cuts.push(p.t);
+  cuts.sort((a, b) => a - b);
+  S.steps = [0, ...cuts].map((t, i) => ({ start: t, title: `Step ${i + 1}`, repeat: 'default', after: 'default' }));
+  S.cur = 0; $('scanBar').style.width = '100%';
+  $('scanStatus').textContent = `Found ${S.steps.length} steps. Give them names below.`;
+  renderAll(); scheduleSave(); makeThumbs();
+}
+async function makeThumbs() {
+  if (!S.source || S.source.type !== 'file' || makeThumbs.busy) return; makeThumbs.busy = true;
+  try {
+    const v = document.createElement('video'); v.muted = true; v.preload = 'auto'; v.src = S.source.url; await once(v, 'loadedmetadata');
+    const c = document.createElement('canvas'); c.width = 128; c.height = 72; const ctx = c.getContext('2d');
+    for (const s of S.steps) { const key = s.start.toFixed(1); if (S.thumbs[key]) continue;
+      v.currentTime = Math.min(v.duration - 0.1, s.start + 1); await once(v, 'seeked'); ctx.drawImage(v, 0, 0, 128, 72); S.thumbs[key] = c.toDataURL('image/jpeg', .7); }
+    renderSteps();
+  } catch (e) {} finally { makeThumbs.busy = false; }
+}
+
+/* ---------- timestamps ---------- */
+function parseStamps(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim(); if (!line) continue;
+    const m = line.match(/((?:\d{1,2}:)?\d{1,2}:\d{2})/); if (!m) continue;
+    const t = parseTime(m[1]); if (t === null) continue;
+    const title = (line.slice(0, m.index) + ' ' + line.slice(m.index + m[1].length)).replace(/^[\s\-–—:|.)\]•*▶►]+|[\s\-–—:|(\[]+$/g, '').trim();
+    out.push({ start: t, title: title || `Step ${out.length + 1}`, repeat: 'default', after: 'default' });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out.filter((s, i) => i === 0 || s.start !== out[i - 1].start);
+}
+const EXAMPLE = `0:00 Intro: what we'll make
+0:22 Cut list for a 30 cm doll
+0:35 Your 45-minute plan
+0:47 How to cut like a pro
+1:03 Measure your doll
+1:20 Make the top pattern
+1:35 Cut the top
+1:49 Cut straps & belt
+2:03 Cut the skirt
+2:28 Make a wavy edge
+2:44 Glue the top
+3:00 Add the straps
+3:12 Add the skirt
+3:26 Add the belt
+3:37 Decorate
+3:57 Check & fix
+4:10 Show your design!`;
+
+/* ---------- mode ---------- */
+function setMode(m) {
+  S.mode = m; $('tabBuild').setAttribute('aria-selected', m === 'build'); $('tabPlay').setAttribute('aria-selected', m === 'play');
+  $('buildTools').classList.toggle('hidden', m === 'play'); $('sourceBar').classList.toggle('hidden', m === 'play' && !!P);
+  hideOverlays(); S.state = 'idle';
+  if (P && !P.paused()) P.pause();
+  if (m === 'play' && P && S.steps.length) { S.cur = clamp(S.cur, 0, S.steps.length - 1); P.seek(S.steps[S.cur].start); showStart(); }
+  renderAll();
+}
+
+/* ---------- events ---------- */
+$('tabBuild').onclick = () => setMode('build');
+$('tabPlay').onclick = () => setMode('play');
+$('fileIn').onchange = e => { loadFile(e.target.files[0]); e.target.value = ''; };
+$('ytForm').onsubmit = e => { e.preventDefault(); const id = ytId($('ytIn').value);
+  if (!id) { toast('That link isn\'t a YouTube video link'); return; } loadYouTube(id, false); };
+$('screen').addEventListener('dragover', e => e.preventDefault());
+$('screen').addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && f.type.startsWith('video')) loadFile(f); });
+
+$('bPlay').onclick = () => { if (!P) return;
+  if ($('ovWait').classList.contains('on')) { goStep(S.cur + 1); return; }
+  if (P.paused()) { hideOverlays(); if (S.steps.length && S.state !== 'playing') { const t = P.time(); if (t >= stepEnd(S.cur) - 0.2 || t < S.steps[S.cur].start - 0.5) P.seek(S.steps[S.cur].start); }
+    P.play(); S.state = 'playing'; } else { P.pause(); S.state = 'paused'; } };
+$('bNext').onclick = () => goStep(S.cur + 1 < S.steps.length ? S.cur + 1 : S.cur, S.mode === 'play' || !P.paused());
+$('bBack').onclick = () => goStep(S.cur - 1, S.mode === 'play' || !P.paused());
+$('bReplay').onclick = () => goStep(S.cur, true);
+$('cSpeed').innerHTML = SPEEDS.map(v => `<button data-v="${v}" aria-pressed="${v === 1}">${sx(v)}</button>`).join('');
+$('cSpeed').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.settings.speed = +b.dataset.v; applySpeed(true); scheduleSave(); };
+$('bSlower').onclick = () => nudgeSpeed(-1);
+$('bFaster').onclick = () => nudgeSpeed(1);
+$('bSpeed').onclick = () => setSpeed(1);
+$('startBtn').onclick = () => goStep(S.cur);
+$('waitNext').onclick = () => goStep(S.cur + 1);
+$('waitReplay').onclick = () => goStep(S.cur);
+$('countGo').onclick = () => { clearInterval(countTimer); goStep(S.cur + 1); };
+$('countStay').onclick = () => { clearInterval(countTimer); $('ovCount').classList.remove('on');
+  $('waitTitle').textContent = `Step ${S.cur + 1} is done`; $('waitNext').textContent = `Next: ${S.steps[S.cur + 1].title}`; $('ovWait').classList.add('on'); };
+$('errClose').onclick = () => $('ovError').classList.remove('on');
+$('doneRestart').onclick = () => goStep(0);
+$('doneReplay').onclick = () => goStep(S.cur);
+$('ruler').addEventListener('click', e => { if (!P || S.mode === 'play') return; const r = e.currentTarget.getBoundingClientRect(); const D = dur(); if (D) P.seek((e.clientX - r.left) / r.width * D); });
+
+$('bMark').onclick = () => { if (!P) return; const t = +P.time().toFixed(2);
+  if (!S.steps.length && t > 1) S.steps.push({ start: 0, title: 'Step 1', repeat: 'default', after: 'default' });
+  if (S.steps.some(s => Math.abs(s.start - t) < 0.5)) { toast('A step already starts here'); return; }
+  S.steps.push({ start: t, title: `Step ${S.steps.length + 1}`, repeat: 'default', after: 'default' }); sortSteps();
+  S.steps.forEach((s, i) => { if (/^Step \d+$/.test(s.title)) s.title = `Step ${i + 1}`; });
+  renderAll(); scheduleSave(); makeThumbs(); toast(`Step marked at ${fmt(t)}`); };
+$('bDetect').onclick = () => { $('detectBox').classList.toggle('hidden'); $('pasteBox').classList.add('hidden'); };
+$('bPaste').onclick = () => { $('pasteBox').classList.toggle('hidden'); $('detectBox').classList.add('hidden'); };
+$('bScan').onclick = () => {
+  if (S.steps.length && !S.scanArmed) { S.scanArmed = true; $('bScan').textContent = `Yes, replace my ${S.steps.length} steps`; $('scanStatus').textContent = 'Finding steps replaces the ones you have.'; return; }
+  S.scanArmed = false; $('bScan').textContent = 'Find steps'; detectSteps(); };
+$('bScanStop').onclick = () => { scanAbort = true; };
+$('bExample').onclick = () => { $('stamps').value = EXAMPLE; };
+$('bUseStamps').onclick = () => { const st = parseStamps($('stamps').value);
+  if (!st.length) { toast('No times found. Write each line like "1:03 Measure your doll"'); return; }
+  if (st[0].start > 0) st.unshift({ start: 0, title: 'Intro', repeat: 'default', after: 'default' });
+  S.steps = st; S.cur = 0; renderAll(); scheduleSave(); makeThumbs(); $('pasteBox').classList.add('hidden'); toast(`${st.length} steps added`); };
+
+$('cRepeat').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.settings.repeat = b.dataset.v; syncSettingsUI(); renderNow(); scheduleSave(); };
+$('cAfter').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.settings.after = b.dataset.v; syncSettingsUI(); scheduleSave(); };
+$('repeatTimes').onchange = e => { S.settings.repeatTimes = +e.target.value; syncSettingsUI(); renderNow(); scheduleSave(); };
+$('delay').onchange = e => { S.settings.delay = +e.target.value; scheduleSave(); };
+
+$('bExport').onclick = () => { const blob = new Blob([JSON.stringify(projectData(), null, 2)], { type: 'application/json' });
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'snipstep-project.json'; document.body.appendChild(a); a.click(); a.remove(); toast('Project file downloaded'); }
+  catch (e) { toast('Downloads are blocked here. Open Snipstep in your browser to download.'); } };
+$('importIn').onchange = async e => { const f = e.target.files[0]; if (!f) return;
+  try { if (!applyProject(JSON.parse(await f.text()))) toast('That file isn\'t a Snipstep project'); else { toast('Project opened'); scheduleSave(); } }
+  catch (err) { toast('That file couldn\'t be read'); } e.target.value = ''; };
+$('bShare').onclick = async () => { const link = location.href.split('#')[0] + '#p=' + b64.enc(JSON.stringify(projectData()));
+  $('shareIn').value = link; $('shareBox').classList.add('on');
+  try { await navigator.clipboard.writeText(link); toast('Share link copied'); } catch (e) { $('shareIn').select(); toast('Copy the link below'); } };
+
+document.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.code === 'Space') { e.preventDefault(); $('bPlay').click(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); if (!$('bNext').disabled) $('bNext').click(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); if (!$('bBack').disabled) $('bBack').click(); }
+  else if (e.key.toLowerCase() === 'r') { if (!$('bReplay').disabled) $('bReplay').click(); }
+  else if (e.key === '-' || e.key === '_') { if (P) nudgeSpeed(-1); }
+  else if (e.key === '+' || e.key === '=') { if (P) nudgeSpeed(1); }
+});
+
+/* ---------- start ---------- */
+(async () => {
+  syncSettingsUI(); renderAll();
+  const h = location.hash.match(/#p=([\w-]+)/);
+  if (h) { try { if (applyProject(JSON.parse(b64.dec(h[1])), true)) return; } catch (e) { toast('That share link is broken'); } }
+  const saved = await store.get('snipstep:project');
+  if (saved) { try { applyProject(JSON.parse(saved)); } catch (e) {} }
+})();
+})();
+</script>
+</body>
+</html>
